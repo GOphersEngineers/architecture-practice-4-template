@@ -13,6 +13,7 @@ import (
 const (
 	outFileName = "current-data"
 	bufSize     = 8192
+	segmentThreshold = 3
 )
 
 type hashIndex map[string]int64
@@ -33,18 +34,22 @@ type KeyPosition struct {
 	position int64
 }
 
+type SegmentManager struct {
+	segments []*Segment
+	lastSegmentIndex int
+}
+
 type Db struct {
 	out              *os.File
 	outPath          string
 	outOffset        int64
 	dir              string
 	segmentSize      int64
-	lastSegmentIndex int
 	indexOps         chan IndexOp
 	keyPositions     chan *KeyPosition
 	putOps           chan PutOp
 	putDone          chan error
-	segments         []*Segment
+	segmentManager   *SegmentManager
 	fileMutex        sync.Mutex
 	indexMutex       sync.Mutex
 }
@@ -60,7 +65,9 @@ var (
 
 func NewDb(dir string, segmentSize int64) (*Db, error) {
 	db := &Db{
-		segments:     make([]*Segment, 0),
+		segmentManager: &SegmentManager{
+			segments: make([]*Segment, 0),
+		},
 		dir:          dir,
 		segmentSize:  segmentSize,
 		indexOps:     make(chan IndexOp),
@@ -155,8 +162,8 @@ func (db *Db) createSegment() error {
 	db.out = f
 	db.outOffset = 0
 	db.outPath = filePath
-	db.segments = append(db.segments, newSegment)
-	if len(db.segments) >= 3 {
+	db.segmentManager.segments = append(db.segmentManager.segments, newSegment)
+	if len(db.segmentManager.segments) >= segmentThreshold {
 		db.performOldSegmentsCompaction()
 	}
 
@@ -164,8 +171,8 @@ func (db *Db) createSegment() error {
 }
 
 func (db *Db) generateNewFileName() string {
-	result := filepath.Join(db.dir, fmt.Sprintf("%s%d", outFileName, db.lastSegmentIndex))
-	db.lastSegmentIndex++
+	result := filepath.Join(db.dir, fmt.Sprintf("%s%d", outFileName, db.segmentManager.lastSegmentIndex))
+	db.segmentManager.lastSegmentIndex++
 	return result
 }
 
@@ -181,12 +188,12 @@ func (db *Db) performOldSegmentsCompaction() {
 		if err != nil {
 			return
 		}
-		lastSegmentIndex := len(db.segments) - 2
+		lastSegmentIndex := len(db.segmentManager.segments) - 2
 		for i := 0; i <= lastSegmentIndex; i++ {
-			s := db.segments[i]
+			s := db.segmentManager.segments[i]
 			for key, index := range s.index {
 				if i < lastSegmentIndex {
-					isInNewerSegments := findKeyInSegments(db.segments[i+1:lastSegmentIndex+1], key)
+					isInNewerSegments := findKeyInSegments(db.segmentManager.segments[i+1:lastSegmentIndex+1], key)
 					if isInNewerSegments {
 						continue
 					}
@@ -203,7 +210,7 @@ func (db *Db) performOldSegmentsCompaction() {
 				}
 			}
 		}
-		db.segments = []*Segment{newSegment, db.getLastSegment()}
+		db.segmentManager.segments = []*Segment{newSegment, db.getLastSegment()}
 	}()
 }
 
@@ -217,7 +224,7 @@ func findKeyInSegments(segments []*Segment, key string) bool {
 }
 
 func (db *Db) recoverAll() error {
-	for _, segment := range db.segments {
+	for _, segment := range db.segmentManager.segments {
 		if err := db.recoverSegment(segment); err != nil {
 			return err
 		}
@@ -285,8 +292,8 @@ func (db *Db) setKey(key string, n int64) {
 }
 
 func (db *Db) getSegmentAndPos(key string) (*Segment, int64, error) {
-	for i := range db.segments {
-		s := db.segments[len(db.segments)-i-1]
+	for i := range db.segmentManager.segments {
+		s := db.segmentManager.segments[len(db.segmentManager.segments)-i-1]
 		pos, ok := s.index[key]
 		if ok {
 			return s, pos, nil
@@ -332,7 +339,7 @@ func (db *Db) Put(key, value string) error {
 }
 
 func (db *Db) getLastSegment() *Segment {
-	return db.segments[len(db.segments)-1]
+	return db.segmentManager.segments[len(db.segmentManager.segments)-1]
 }
 
 func (s *Segment) getFromSegment(position int64) (string, error) {
