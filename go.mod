@@ -1,4 +1,4 @@
-module github.com/roman-mazur/architecture-practice-4-template
+module github.com/GOphersEngineers/architecture-practice-4-template
 
 go 1.22
 
