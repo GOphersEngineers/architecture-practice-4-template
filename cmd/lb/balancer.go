@@ -10,8 +10,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/roman-mazur/architecture-practice-4-template/httptools"
-	"github.com/roman-mazur/architecture-practice-4-template/signal"
+	"github.com/GOphersEngineers/architecture-practice-4-template/httptools"
+	"github.com/GOphersEngineers/architecture-practice-4-template/signal"
 )
 
 var (
