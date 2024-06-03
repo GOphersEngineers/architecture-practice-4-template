@@ -97,6 +97,7 @@ func TestDb_Segmentation(t *testing.T) {
 	}
 	defer os.RemoveAll(saveDirectory)
 
+	
 	db, err := NewDb(saveDirectory, 35)
 	if err != nil {
 		t.Fatal(err)
@@ -108,27 +109,27 @@ func TestDb_Segmentation(t *testing.T) {
 		db.Put("2", "v2")
 		db.Put("3", "v3")
 		db.Put("2", "v5")
-		actualTwoFiles := len(db.segments)
+		actualTwoFiles := len(db.segmentManager.segments)
 		expected2Files := 2
 		if actualTwoFiles != expected2Files {
-			t.Errorf("An error occurred during segmentation. Expected 2 files, but received %d.", len(db.segments))
+			t.Errorf("An error occurred during segmentation. Expected 2 files, but received %d.", len(db.segmentManager.segments))
 		}
 	})
 
 	t.Run("check starting segmentation", func(t *testing.T) {
 		db.Put("4", "v4")
-		actualTreeFiles := len(db.segments)
+		actualTreeFiles := len(db.segmentManager.segments)
 		expected3Files := 3
 		if actualTreeFiles != expected3Files {
-			t.Errorf("An error occurred during segmentation. Expected 3 files, but received %d.", len(db.segments))
+			t.Errorf("An error occurred during segmentation. Expected 3 files, but received %d.", len(db.segmentManager.segments))
 		}
 
 		time.Sleep(2 * time.Second)
 
-		actualTwoFiles := len(db.segments)
+		actualTwoFiles := len(db.segmentManager.segments)
 		expected2Files := 2
 		if actualTwoFiles != expected2Files {
-			t.Errorf("An error occurred during segmentation. Expected 2 files, but received %d.", len(db.segments))
+			t.Errorf("An error occurred during segmentation. Expected 2 files, but received %d.", len(db.segmentManager.segments))
 		}
 	})
 
@@ -141,7 +142,7 @@ func TestDb_Segmentation(t *testing.T) {
 	})
 
 	t.Run("check size", func(t *testing.T) {
-		file, err := os.Open(db.segments[0].filePath)
+		file, err := os.Open(db.segmentManager.segments[0].filePath)
 		if err != nil {
 			t.Error(err)
 		}
