@@ -33,6 +33,12 @@ type KeyPosition struct {
 	position int64
 }
 
+type ReadOp struct {
+	key     string
+	resp    chan string
+	errResp chan error
+}
+
 type Db struct {
 	out              *os.File
 	outPath          string
@@ -44,6 +50,7 @@ type Db struct {
 	keyPositions     chan *KeyPosition
 	putOps           chan PutOp
 	putDone          chan error
+	readOps          chan ReadOp
 	segments         []*Segment
 	fileMutex        sync.Mutex
 	indexMutex       sync.Mutex
@@ -67,6 +74,7 @@ func NewDb(dir string, segmentSize int64) (*Db, error) {
 		keyPositions: make(chan *KeyPosition),
 		putOps:       make(chan PutOp),
 		putDone:      make(chan error),
+		readOps:      make(chan ReadOp, 10), // Обмеження кількості паралельних операцій читання
 	}
 
 	if err := db.createSegment(); err != nil {
@@ -79,6 +87,7 @@ func NewDb(dir string, segmentSize int64) (*Db, error) {
 
 	db.startIndexRoutine()
 	db.startPutRoutine()
+	db.startReadWorkers(5)
 
 	return db, nil
 }
@@ -138,6 +147,26 @@ func (db *Db) startPutRoutine() {
 			db.fileMutex.Unlock()
 		}
 	}()
+}
+
+func (db *Db) startReadWorkers(numWorkers int) {
+	for i := 0; i < numWorkers; i++ {
+		go func() {
+			for op := range db.readOps {
+				keyPos := db.getPos(op.key)
+				if keyPos == nil {
+					op.errResp <- ErrNotFound
+				} else {
+					value, err := keyPos.segment.getFromSegment(keyPos.position)
+					if err != nil {
+						op.errResp <- err
+					} else {
+						op.resp <- value
+					}
+				}
+			}
+		}()
+	}
 }
 
 func (db *Db) createSegment() error {
@@ -306,15 +335,20 @@ func (db *Db) getPos(key string) *KeyPosition {
 }
 
 func (db *Db) Get(key string) (string, error) {
-	keyPos := db.getPos(key)
-	if keyPos == nil {
-		return "", ErrNotFound
+	resp := make(chan string)
+	errResp := make(chan error)
+	db.readOps <- ReadOp{
+		key:     key,
+		resp:    resp,
+		errResp: errResp,
 	}
-	value, err := keyPos.segment.getFromSegment(keyPos.position)
-	if err != nil {
+
+	select {
+	case value := <-resp:
+		return value, nil
+	case err := <-errResp:
 		return "", err
 	}
-	return value, nil
 }
 
 func (db *Db) Put(key, value string) error {
