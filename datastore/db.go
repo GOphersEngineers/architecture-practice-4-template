@@ -81,7 +81,7 @@ func NewDb(dir string, segmentSize int64) (*Db, error) {
 		keyPositions: make(chan *KeyPosition),
 		putOps:       make(chan PutOp),
 		putDone:      make(chan error),
-		readOps:      make(chan ReadOp, 10),
+		readOps:      make(chan ReadOp, 10), // Обмеження кількості паралельних операцій читання
 	}
 
 	if err := db.createSegment(); err != nil {
